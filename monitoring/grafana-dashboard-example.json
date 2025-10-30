@@ -1,0 +1,22 @@
+{
+  "title": "Spring Services Overview",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "HTTP Requests Rate",
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count[5m])) by (uri, status)" }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "JVM Memory Used",
+      "targets": [
+        { "expr": "sum(jvm_memory_used_bytes) by (area)" }
+      ]
+    }
+  ]
+}
+
+
+

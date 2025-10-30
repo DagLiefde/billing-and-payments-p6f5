@@ -60,6 +60,30 @@ public class UserController {
                     .body(ApiResponse.error("Failed to retrieve user: " + e.getMessage()));
         }
     }
+
+    @GetMapping("/{id}/preferences")
+    public ResponseEntity<ApiResponse<Object>> getPreferences(@PathVariable Long id) {
+        try {
+            return userService.getPreferences(id)
+                    .<ResponseEntity<ApiResponse<Object>>>map(p -> ResponseEntity.ok(ApiResponse.success("Preferences retrieved", p)))
+                    .orElse(ResponseEntity.ok(ApiResponse.success("Preferences not set", null)));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(ApiResponse.error("Failed to retrieve preferences: " + e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{id}/preferences")
+    public ResponseEntity<ApiResponse<Object>> updatePreferences(@PathVariable Long id,
+                                                                 @RequestBody java.util.Map<String, String> body) {
+        try {
+            var pref = userService.upsertPreferences(id, body.get("font_size"), body.get("contrast_mode"));
+            return ResponseEntity.ok(ApiResponse.success("Preferences updated", pref));
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(ApiResponse.error("Failed to update preferences: " + e.getMessage()));
+        }
+    }
     
     /**
      * Update user (Admin only or own profile).

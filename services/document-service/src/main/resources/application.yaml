@@ -1,0 +1,24 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: document-service
+  datasource:
+    url: ${DOCUMENT_DB_URL}
+    username: ${DOCUMENT_DB_USERNAME}
+    password: ${DOCUMENT_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: document
+    open-in-view: false
+  flyway:
+    enabled: true
+    schemas: document
+    baseline-on-migrate: true
+
+
+

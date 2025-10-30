@@ -1,0 +1,14 @@
+CREATE SCHEMA IF NOT EXISTS shipment;
+SET search_path TO shipment;
+
+CREATE TABLE IF NOT EXISTS shipments (
+    shipment_id BIGSERIAL PRIMARY KEY,
+    reference TEXT NOT NULL UNIQUE,
+    status VARCHAR(16) NOT NULL,
+    locked BOOLEAN NOT NULL DEFAULT FALSE,
+    invoiced BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+

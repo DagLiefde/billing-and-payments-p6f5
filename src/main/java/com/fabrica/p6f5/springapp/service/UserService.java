@@ -1,6 +1,8 @@
 package com.fabrica.p6f5.springapp.service;
 
 import com.fabrica.p6f5.springapp.entity.User;
+import com.fabrica.p6f5.springapp.entity.UserPreference;
+import com.fabrica.p6f5.springapp.repository.UserPreferenceRepository;
 import com.fabrica.p6f5.springapp.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,6 +23,7 @@ public class UserService implements UserDetailsService {
     
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    @Autowired private UserPreferenceRepository preferenceRepository;
     
     @Autowired
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
@@ -109,5 +112,21 @@ public class UserService implements UserDetailsService {
      */
     public void deleteById(Long id) {
         userRepository.deleteById(id);
+    }
+
+    public Optional<UserPreference> getPreferences(Long userId) {
+        return userRepository.findById(userId).flatMap(preferenceRepository::findByUser);
+    }
+
+    public UserPreference upsertPreferences(Long userId, String fontSize, String contrastMode) {
+        User user = userRepository.findById(userId).orElseThrow();
+        UserPreference pref = preferenceRepository.findByUser(user).orElseGet(() -> {
+            UserPreference p = new UserPreference();
+            p.setUser(user);
+            return p;
+        });
+        pref.setFontSize(fontSize);
+        pref.setContrastMode(contrastMode);
+        return preferenceRepository.save(pref);
     }
 }

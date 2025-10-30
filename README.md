@@ -1,29 +1,25 @@
-# Billing and Payments API - JWT Authentication System
+# Billing and Payments Backend – Microservices for Billing Module
 
-This project implements a secure backend authentication system using JWT (JSON Web Tokens) following SOLID principles.
+This repository contains the existing authentication service and three new Spring Boot microservices to implement the Billing module (invoices, shipments, documents) with PostgreSQL (Neon), Docker, Kubernetes, and CI/CD.
 
 ## 🏗️ Architecture Overview
 
-The authentication system is built following SOLID principles:
+Microservices (bounded contexts):
+- user-auth-service (root app): JWT auth, users, accessibility preferences endpoints
+- invoice-service: invoice draft/edit/issue lifecycle, history, idempotency
+- shipment-service: shipments listing/detail for invoice prefill
+- document-service: upload/download attachments
 
-- **Single Responsibility Principle (SRP)**: Each class has one reason to change
-- **Open/Closed Principle (OCP)**: Open for extension, closed for modification
-- **Liskov Substitution Principle (LSP)**: Derived classes are substitutable for base classes
-- **Interface Segregation Principle (ISP)**: Clients shouldn't depend on interfaces they don't use
-- **Dependency Inversion Principle (DIP)**: Depend on abstractions, not concretions
+Stack: Spring Boot 3 (Java 21), Spring Data JPA, Flyway, PostgreSQL (Neon), Spring Security, Actuator (Prometheus), springdoc-openapi, Docker, Kubernetes, GitHub Actions, SonarCloud.
 
-## 🚀 Features
+## 🚀 Features (per User Stories)
 
-- JWT-based authentication
-- User registration and login
-- Password encryption using BCrypt
-- Role-based access control (USER, ADMIN)
-- Secure API endpoints
-- Database integration with PostgreSQL
-- Comprehensive error handling
-- RESTful API design
+- HU-002 Create Invoice: create draft, multiple shipments, prevent duplicates, validate fields, prefill via shipment-service, offline draft design
+- HU-003 Edit Draft: OCC via @Version, history versions, revert design, attachments via document-service
+- HU-004 Issue Invoice: fiscal validations, unique folio, idempotent issuance, lock edits after issuing, audit trail
+- HU-010 Accessibility: backend endpoints for user preferences
 
-## 📁 Project Structure
+## 📁 Project Structure (selected)
 
 ```
 src/main/java/com/fabrica/p6f5/springapp/
@@ -49,19 +45,26 @@ src/main/java/com/fabrica/p6f5/springapp/
 │   ├── JwtService.java              # JWT token operations
 │   └── UserService.java             # User management service
 └── SpringappApplication.java        # Main application class
+
+services/
+  invoice-service/                   # Spring Boot microservice (port 8081)
+  shipment-service/                  # Spring Boot microservice (port 8082)
+  document-service/                  # Spring Boot microservice (port 8083)
+k8s/                                 # K8s manifests per service + secrets template
+.github/workflows/ci.yml             # CI (build, test, SonarCloud, push images)
+docker-compose.yml                   # Local multi-service run
+monitoring/grafana-dashboard-example.json
 ```
 
-## 🛠️ Setup Instructions
+## 🛠️ Setup & Run (Local)
 
 ### 1. Database Configuration
 
-Update the database connection in `application.properties`:
-
-```properties
-spring.datasource.url=jdbc:postgresql://your-neon-database-url
-spring.datasource.username=your_username
-spring.datasource.password=your_password
-```
+Neon connections (preserve existing root app config). For new services set env vars:
+- INVOICE_DB_URL/USERNAME/PASSWORD
+- SHIPMENT_DB_URL/USERNAME/PASSWORD
+- DOCUMENT_DB_URL/USERNAME/PASSWORD
+Use `sslmode=require` in JDBC URLs.
 
 ### 2. JWT Configuration
 
@@ -74,15 +77,19 @@ jwt.expiration=86400000  # 24 hours in milliseconds
 
 ### 3. Running the Application
 
+Root auth service:
 ```bash
 ./gradlew bootRun
 ```
-
-The application will start on `http://localhost:8080`
+New services via Docker Compose:
+```bash
+docker-compose up --build
+```
+Ports: auth 8080, invoice 8081, shipment 8082, document 8083.
 
 ## 📚 API Endpoints
 
-### Authentication Endpoints
+### Authentication & Users (root)
 
 #### Register User
 ```http
@@ -118,7 +125,7 @@ Authorization: Bearer <jwt_token>
 POST /api/auth/validate?token=<jwt_token>
 ```
 
-### User Management Endpoints
+### User Management & Accessibility
 
 #### Get All Users (Admin only)
 ```http
@@ -145,21 +152,51 @@ Content-Type: application/json
 ```
 
 #### Delete User (Admin only)
+
+#### Accessibility Preferences (HU-010)
+```http
+GET /api/users/{id}/preferences
+PUT /api/users/{id}/preferences
+Content-Type: application/json
+
+{
+  "font_size": "md|lg",
+  "contrast_mode": "light|dark|high"
+}
+```
+
+### Shipment-service
+```http
+GET /api/v1/shipments?status=CREATED|DELIVERED|CANCELLED
+GET /api/v1/shipments/{id}
+```
+
+### Invoice-service
+```http
+POST /api/v1/invoices            # Headers: X-User-Id
+GET  /api/v1/invoices/{id}
+PUT  /api/v1/invoices/{id}       # OCC, Headers: X-User-Id
+POST /api/v1/invoices/{id}/issue # Idempotent, Headers: X-User-Id
+GET  /api/v1/invoices/{id}/history
+```
+
+### Document-service
+```http
+POST /api/v1/documents           # multipart/form-data, Headers: X-User-Id
+GET  /api/v1/documents/{id}
+```
 ```http
 DELETE /api/users/{id}
 Authorization: Bearer <jwt_token>
 ```
 
-## 🔐 Security Features
+## 🔐 Security & RBAC
 
-- **Password Encryption**: BCrypt password hashing
-- **JWT Tokens**: Secure token-based authentication
-- **Role-based Access**: USER and ADMIN roles
-- **CORS Configuration**: Cross-origin resource sharing
-- **Input Validation**: Request validation using Bean Validation
-- **Error Handling**: Comprehensive error responses
+- JWT existing in auth-service (preserved). Recommended: API gateway for central validation across services.
+- Roles: finance_operator (create/edit/issue), auditor (read), admin (all).
+- Input validation with Bean Validation (@Valid records/DTOs). Structured error responses.
 
-## 🧪 Testing the API
+## 🧪 Testing the API (examples)
 
 ### 1. Register a new user
 ```bash
@@ -188,7 +225,7 @@ curl -X GET http://localhost:8080/api/auth/profile \
   -H "Authorization: Bearer <your_jwt_token>"
 ```
 
-## 🔧 Configuration
+## 🔧 Configuration (Neon & Secrets)
 
 ### Database Schema
 
@@ -210,7 +247,7 @@ CREATE TABLE users (
 
 ### Environment Variables
 
-For production, consider using environment variables:
+For production, set environment variables (Kubernetes secrets recommended):
 
 ```properties
 spring.datasource.url=${DATABASE_URL}
@@ -232,7 +269,7 @@ The API returns consistent error responses:
 }
 ```
 
-## 📝 SOLID Principles Implementation
+## 📝 Clean Architecture & SOLID
 
 ### Single Responsibility Principle
 - `User` entity: Only handles user data
@@ -256,19 +293,14 @@ The API returns consistent error responses:
 
 ## 🔍 Monitoring and Logging
 
-The application includes comprehensive logging:
-
-- DEBUG level for application packages
-- Security event logging
-- SQL query logging (in development)
+- Actuator Prometheus endpoint enabled in new services; sample Grafana dashboard in `monitoring/grafana-dashboard-example.json`.
 
 ## 🚀 Deployment
 
-1. Update database configuration for production
-2. Set secure JWT secret
-3. Configure CORS for your frontend domain
-4. Set up SSL/TLS for HTTPS
-5. Configure proper logging levels
+1. Build images via GitHub Actions (GHCR push). Or locally: `docker build` per service.
+2. Kubernetes: create Neon secrets and apply manifests in `k8s/`.
+3. Verify readiness/liveness probes; access Swagger UI per service.
+4. SonarCloud: create organization and project keys; set tokens as repo secrets.
 
 ## 📞 Support
 

@@ -1,0 +1,41 @@
+version: '3.9'
+services:
+  user-auth-service:
+    build: .
+    image: user-auth-service:local
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=${AUTH_DB_URL}
+      - SPRING_DATASOURCE_USERNAME=${AUTH_DB_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${AUTH_DB_PASSWORD}
+  invoice-service:
+    build: ./services/invoice-service
+    image: invoice-service:local
+    ports:
+      - "8081:8081"
+    environment:
+      - INVOICE_DB_URL=${INVOICE_DB_URL}
+      - INVOICE_DB_USERNAME=${INVOICE_DB_USERNAME}
+      - INVOICE_DB_PASSWORD=${INVOICE_DB_PASSWORD}
+  shipment-service:
+    build: ./services/shipment-service
+    image: shipment-service:local
+    ports:
+      - "8082:8082"
+    environment:
+      - SHIPMENT_DB_URL=${SHIPMENT_DB_URL}
+      - SHIPMENT_DB_USERNAME=${SHIPMENT_DB_USERNAME}
+      - SHIPMENT_DB_PASSWORD=${SHIPMENT_DB_PASSWORD}
+  document-service:
+    build: ./services/document-service
+    image: document-service:local
+    ports:
+      - "8083:8083"
+    environment:
+      - DOCUMENT_DB_URL=${DOCUMENT_DB_URL}
+      - DOCUMENT_DB_USERNAME=${DOCUMENT_DB_USERNAME}
+      - DOCUMENT_DB_PASSWORD=${DOCUMENT_DB_PASSWORD}
+
+
+
