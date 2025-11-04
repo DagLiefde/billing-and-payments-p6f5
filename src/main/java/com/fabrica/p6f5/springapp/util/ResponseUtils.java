@@ -33,9 +33,18 @@ public final class ResponseUtils {
     /**
      * Create error response.
      */
-    public static <T> ResponseEntity<ApiResponse<T>> error(String message, HttpStatus status) {
+    public static ResponseEntity<ApiResponse<?>> error(String message, HttpStatus status) {
+        ApiResponse<?> response = new ApiResponse<>(false, message, null);
+        return ResponseEntity.status(status).body(response);
+    }
+    
+    /**
+     * Create error response with specific type.
+     */
+    public static <T> ResponseEntity<ApiResponse<T>> errorTyped(String message, HttpStatus status) {
         ApiResponse<T> response = new ApiResponse<>(false, message, null);
         return ResponseEntity.status(status).body(response);
     }
 }
+
 

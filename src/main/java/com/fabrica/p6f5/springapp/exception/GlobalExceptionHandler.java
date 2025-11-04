@@ -1,6 +1,7 @@
 package com.fabrica.p6f5.springapp.exception;
 
 import com.fabrica.p6f5.springapp.dto.ApiResponse;
+import com.fabrica.p6f5.springapp.util.ResponseUtils;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,12 +28,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiResponse<?>> handleResourceNotFound(ResourceNotFoundException ex) {
         logger.error("Resource not found: {}", ex.getMessage());
-        ApiResponse<?> response = new ApiResponse<>(
-            false,
-            ex.getMessage(),
-            null
-        );
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        return ResponseUtils.error(ex.getMessage(), HttpStatus.NOT_FOUND);
     }
     
     /**
@@ -41,12 +37,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<?>> handleBusinessException(BusinessException ex) {
         logger.error("Business exception: {}", ex.getMessage());
-        ApiResponse<?> response = new ApiResponse<>(
-            false,
-            ex.getMessage(),
-            null
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        return ResponseUtils.error(ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
     
     /**
@@ -55,18 +46,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<?>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         logger.error("Validation error: {}", ex.getMessage());
-        String errors = ex.getBindingResult()
+        String errors = extractValidationErrors(ex);
+        return ResponseUtils.error("Validation failed: " + errors, HttpStatus.BAD_REQUEST);
+    }
+    
+    /**
+     * Extract validation errors from exception.
+     */
+    private String extractValidationErrors(MethodArgumentNotValidException ex) {
+        return ex.getBindingResult()
             .getFieldErrors()
             .stream()
             .map(error -> error.getField() + ": " + error.getDefaultMessage())
             .collect(Collectors.joining(", "));
-        
-        ApiResponse<?> response = new ApiResponse<>(
-            false,
-            "Validation failed: " + errors,
-            null
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
     
     /**
@@ -75,12 +67,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<?>> handleConstraintViolation(ConstraintViolationException ex) {
         logger.error("Constraint violation: {}", ex.getMessage());
-        ApiResponse<?> response = new ApiResponse<>(
-            false,
-            "Constraint violation: " + ex.getMessage(),
-            null
-        );
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        return ResponseUtils.error("Constraint violation: " + ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
     
     /**
@@ -89,12 +76,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<?>> handleGenericException(Exception ex) {
         logger.error("Unexpected error: {}", ex.getMessage(), ex);
-        ApiResponse<?> response = new ApiResponse<>(
-            false,
-            "An unexpected error occurred: " + ex.getMessage(),
-            null
-        );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        return ResponseUtils.error("An unexpected error occurred: " + ex.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
 

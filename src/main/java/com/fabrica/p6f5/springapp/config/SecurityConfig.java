@@ -3,7 +3,6 @@ package com.fabrica.p6f5.springapp.config;
 import com.fabrica.p6f5.springapp.security.JwtAuthenticationEntryPoint;
 import com.fabrica.p6f5.springapp.security.JwtAuthenticationFilter;
 import com.fabrica.p6f5.springapp.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -28,16 +27,18 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
     
-    @Autowired
-    @Lazy
-    private UserService userService;
+    private final UserService userService;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
     
-    @Autowired
-    private JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    
-    @Autowired
-    @Lazy
-    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    public SecurityConfig(
+            @Lazy UserService userService,
+            JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
+            @Lazy JwtAuthenticationFilter jwtAuthenticationFilter) {
+        this.userService = userService;
+        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
     
     /**
      * Password encoder bean.
