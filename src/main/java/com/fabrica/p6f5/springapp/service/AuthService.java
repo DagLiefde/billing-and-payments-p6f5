@@ -4,7 +4,6 @@ import com.fabrica.p6f5.springapp.dto.AuthResponse;
 import com.fabrica.p6f5.springapp.dto.LoginRequest;
 import com.fabrica.p6f5.springapp.dto.RegisterRequest;
 import com.fabrica.p6f5.springapp.entity.User;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -25,7 +24,6 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
     
-    @Autowired
     public AuthService(UserService userService, JwtService jwtService, AuthenticationManager authenticationManager) {
         this.userService = userService;
         this.jwtService = jwtService;
@@ -40,27 +38,41 @@ public class AuthService {
      * @throws RuntimeException if user already exists
      */
     public AuthResponse register(RegisterRequest request) {
-        // Check if user already exists
+        validateUserDoesNotExist(request);
+        User savedUser = createAndSaveUser(request);
+        String token = jwtService.generateToken(savedUser);
+        return createAuthResponse(token, savedUser);
+    }
+    
+    /**
+     * Validate that user does not already exist.
+     */
+    private void validateUserDoesNotExist(RegisterRequest request) {
         if (userService.existsByUsername(request.getUsername())) {
             throw new RuntimeException("Username is already taken!");
         }
-        
         if (userService.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email is already in use!");
         }
-        
-        // Create new user
+    }
+    
+    /**
+     * Create and save user from request.
+     */
+    private User createAndSaveUser(RegisterRequest request) {
         User user = request.toUser();
-        User savedUser = userService.save(user);
-        
-        // Generate JWT token
-        String token = jwtService.generateToken(savedUser);
-        
+        return userService.save(user);
+    }
+    
+    /**
+     * Create authentication response.
+     */
+    private AuthResponse createAuthResponse(String token, User user) {
         return new AuthResponse(
                 token,
-                savedUser.getUsername(),
-                savedUser.getEmail(),
-                savedUser.getId()
+                user.getUsername(),
+                user.getEmail(),
+                user.getId()
         );
     }
     
@@ -72,26 +84,29 @@ public class AuthService {
      * @throws RuntimeException if authentication fails
      */
     public AuthResponse login(LoginRequest request) {
-        // Authenticate user
-        Authentication authentication = authenticationManager.authenticate(
+        Authentication authentication = authenticateUser(request);
+        User user = extractUserFromAuthentication(authentication);
+        String token = jwtService.generateToken(user);
+        return createAuthResponse(token, user);
+    }
+    
+    /**
+     * Authenticate user credentials.
+     */
+    private Authentication authenticateUser(LoginRequest request) {
+        return authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getUsernameOrEmail(),
                         request.getPassword()
                 )
         );
-        
-        // Get user details
-        User user = (User) authentication.getPrincipal();
-        
-        // Generate JWT token
-        String token = jwtService.generateToken(user);
-        
-        return new AuthResponse(
-                token,
-                user.getUsername(),
-                user.getEmail(),
-                user.getId()
-        );
+    }
+    
+    /**
+     * Extract user from authentication.
+     */
+    private User extractUserFromAuthentication(Authentication authentication) {
+        return (User) authentication.getPrincipal();
     }
     
     /**
@@ -116,6 +131,9 @@ public class AuthService {
     public boolean validateToken(String token) {
         try {
             String username = jwtService.extractUsername(token);
+            if (username == null) {
+                return false;
+            }
             UserDetails userDetails = userService.loadUserByUsername(username);
             return jwtService.isTokenValid(token, userDetails);
         } catch (Exception e) {

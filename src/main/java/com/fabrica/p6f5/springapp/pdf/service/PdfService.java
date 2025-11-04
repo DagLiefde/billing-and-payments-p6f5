@@ -9,7 +9,7 @@ import com.fabrica.p6f5.springapp.pdf.repository.PdfLogRepository;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fabrica.p6f5.springapp.util.Constants;
 import org.springframework.stereotype.Service;
 
 /**
@@ -21,11 +21,13 @@ public class PdfService {
     
     private static final Logger logger = LoggerFactory.getLogger(PdfService.class);
     
-    @Autowired
-    private InvoiceRepository invoiceRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final PdfLogRepository pdfLogRepository;
     
-    @Autowired
-    private PdfLogRepository pdfLogRepository;
+    public PdfService(InvoiceRepository invoiceRepository, PdfLogRepository pdfLogRepository) {
+        this.invoiceRepository = invoiceRepository;
+        this.pdfLogRepository = pdfLogRepository;
+    }
     
     /**
      * Generate PDF for an invoice
@@ -34,13 +36,8 @@ public class PdfService {
     public String generateInvoicePDF(Long invoiceId, Long generatedBy) {
         logger.info("Generating PDF for invoice id: {}", invoiceId);
         
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found with id: " + invoiceId));
-        
-        // Check if invoice is in ISSUED status
-        if (invoice.getStatus() != Invoice.InvoiceStatus.ISSUED) {
-            throw new BusinessException("PDF can only be generated for ISSUED invoices. Current status: " + invoice.getStatus());
-        }
+        Invoice invoice = findInvoiceById(invoiceId);
+        validateInvoiceStatusForPdf(invoice);
         
         try {
             // Create PDF log entry
@@ -79,7 +76,24 @@ public class PdfService {
             pdfLog.setGeneratedBy(generatedBy);
             pdfLogRepository.save(pdfLog);
             
-            throw new BusinessException("Failed to generate PDF: " + e.getMessage());
+            throw new BusinessException(String.format(Constants.PDF_GENERATION_FAILED, e.getMessage()));
+        }
+    }
+    
+    /**
+     * Find invoice by ID or throw exception.
+     */
+    private Invoice findInvoiceById(Long invoiceId) {
+        return invoiceRepository.findById(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException(Constants.INVOICE_NOT_FOUND + invoiceId));
+    }
+    
+    /**
+     * Validate invoice status for PDF generation.
+     */
+    private void validateInvoiceStatusForPdf(Invoice invoice) {
+        if (invoice.getStatus() != Invoice.InvoiceStatus.ISSUED) {
+            throw new BusinessException(String.format(Constants.PDF_ONLY_ISSUED, invoice.getStatus()));
         }
     }
     

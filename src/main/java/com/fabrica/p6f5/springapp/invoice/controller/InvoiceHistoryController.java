@@ -7,7 +7,7 @@ import com.fabrica.p6f5.springapp.invoice.dto.InvoiceHistoryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fabrica.p6f5.springapp.util.ResponseUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,8 +24,11 @@ import java.util.stream.Collectors;
 @Tag(name = "Invoice History API", description = "API for managing invoice history")
 public class InvoiceHistoryController {
     
-    @Autowired
-    private AuditService auditService;
+    private final AuditService auditService;
+    
+    public InvoiceHistoryController(AuditService auditService) {
+        this.auditService = auditService;
+    }
     
     /**
      * Get invoice history
@@ -38,12 +41,7 @@ public class InvoiceHistoryController {
         List<InvoiceHistoryResponse> response = history.stream()
             .map(this::convertToResponse)
             .collect(Collectors.toList());
-        ApiResponse<List<InvoiceHistoryResponse>> apiResponse = new ApiResponse<>(
-            true,
-            "Invoice history retrieved successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Invoice history retrieved successfully");
     }
     
     /**
@@ -55,21 +53,11 @@ public class InvoiceHistoryController {
             @Parameter(description = "Invoice ID") @PathVariable Long invoiceId,
             @Parameter(description = "Version number") @PathVariable Integer version) {
         Optional<InvoiceHistory> history = auditService.getInvoiceHistoryVersion(invoiceId, version);
-        if (!history.isPresent()) {
-            ApiResponse<InvoiceHistoryResponse> apiResponse = new ApiResponse<>(
-                false,
-                "Version not found",
-                null
-            );
-            return ResponseEntity.ok(apiResponse);
+        if (history.isEmpty()) {
+            return ResponseUtils.error("Version not found", org.springframework.http.HttpStatus.NOT_FOUND);
         }
         InvoiceHistoryResponse response = convertToResponse(history.get());
-        ApiResponse<InvoiceHistoryResponse> apiResponse = new ApiResponse<>(
-            true,
-            "Invoice version retrieved successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Invoice version retrieved successfully");
     }
     
     /**

@@ -7,14 +7,14 @@ import com.fabrica.p6f5.springapp.invoice.dto.InvoiceResponse;
 import com.fabrica.p6f5.springapp.invoice.dto.UpdateInvoiceRequest;
 import com.fabrica.p6f5.springapp.invoice.model.Invoice;
 import com.fabrica.p6f5.springapp.invoice.service.InvoiceService;
+import com.fabrica.p6f5.springapp.pdf.service.PdfService;
+import com.fabrica.p6f5.springapp.util.ResponseUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -32,11 +32,13 @@ public class InvoiceController {
     
     private static final Logger logger = LoggerFactory.getLogger(InvoiceController.class);
     
-    @Autowired
-    private InvoiceService invoiceService;
+    private final InvoiceService invoiceService;
+    private final PdfService pdfService;
     
-    @Autowired
-    private com.fabrica.p6f5.springapp.pdf.service.PdfService pdfService;
+    public InvoiceController(InvoiceService invoiceService, PdfService pdfService) {
+        this.invoiceService = invoiceService;
+        this.pdfService = pdfService;
+    }
     
     /**
      * Create a draft invoice
@@ -48,12 +50,7 @@ public class InvoiceController {
             @AuthenticationPrincipal User user) {
         logger.info("Creating draft invoice by user: {}", user.getUsername());
         InvoiceResponse response = invoiceService.createDraftInvoice(request, user.getId());
-        ApiResponse<InvoiceResponse> apiResponse = new ApiResponse<>(
-            true,
-            "Draft invoice created successfully",
-            response
-        );
-        return ResponseEntity.status(HttpStatus.CREATED).body(apiResponse);
+        return ResponseUtils.created(response, "Draft invoice created successfully");
     }
     
     /**
@@ -67,12 +64,7 @@ public class InvoiceController {
             @AuthenticationPrincipal User user) {
         logger.info("Updating draft invoice id: {} by user: {}", invoiceId, user.getUsername());
         InvoiceResponse response = invoiceService.updateDraftInvoice(invoiceId, request, user.getId());
-        ApiResponse<InvoiceResponse> apiResponse = new ApiResponse<>(
-            true,
-            "Draft invoice updated successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Draft invoice updated successfully");
     }
     
     /**
@@ -85,12 +77,7 @@ public class InvoiceController {
             @AuthenticationPrincipal User user) {
         logger.info("Issuing invoice id: {} by user: {}", invoiceId, user.getUsername());
         InvoiceResponse response = invoiceService.issueInvoice(invoiceId, user.getId());
-        ApiResponse<InvoiceResponse> apiResponse = new ApiResponse<>(
-            true,
-            "Invoice issued successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Invoice issued successfully");
     }
     
     /**
@@ -102,12 +89,7 @@ public class InvoiceController {
             @Parameter(description = "Invoice ID") @PathVariable Long invoiceId) {
         logger.info("Getting invoice id: {}", invoiceId);
         InvoiceResponse response = invoiceService.getInvoiceById(invoiceId);
-        ApiResponse<InvoiceResponse> apiResponse = new ApiResponse<>(
-            true,
-            "Invoice retrieved successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Invoice retrieved successfully");
     }
     
     /**
@@ -118,12 +100,7 @@ public class InvoiceController {
     public ResponseEntity<ApiResponse<List<InvoiceResponse>>> getAllInvoices() {
         logger.info("Getting all invoices");
         List<InvoiceResponse> response = invoiceService.getAllInvoices();
-        ApiResponse<List<InvoiceResponse>> apiResponse = new ApiResponse<>(
-            true,
-            "Invoices retrieved successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Invoices retrieved successfully");
     }
     
     /**
@@ -136,12 +113,7 @@ public class InvoiceController {
         logger.info("Getting invoices with status: {}", status);
         Invoice.InvoiceStatus invoiceStatus = Invoice.InvoiceStatus.valueOf(status.toUpperCase());
         List<InvoiceResponse> response = invoiceService.getInvoicesByStatus(invoiceStatus);
-        ApiResponse<List<InvoiceResponse>> apiResponse = new ApiResponse<>(
-            true,
-            "Invoices retrieved successfully",
-            response
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(response, "Invoices retrieved successfully");
     }
     
     /**
@@ -154,12 +126,7 @@ public class InvoiceController {
             @AuthenticationPrincipal User user) {
         logger.info("Generating PDF for invoice id: {} by user: {}", invoiceId, user.getUsername());
         String pdfUrl = pdfService.generateInvoicePDF(invoiceId, user.getId());
-        ApiResponse<String> apiResponse = new ApiResponse<>(
-            true,
-            "PDF generated successfully",
-            pdfUrl
-        );
-        return ResponseEntity.ok(apiResponse);
+        return ResponseUtils.success(pdfUrl, "PDF generated successfully");
     }
 }
 

@@ -7,7 +7,7 @@ import com.fabrica.p6f5.springapp.dto.RegisterRequest;
 import com.fabrica.p6f5.springapp.entity.User;
 import com.fabrica.p6f5.springapp.service.AuthService;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fabrica.p6f5.springapp.util.ResponseUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,8 +23,11 @@ import java.util.Optional;
 @CrossOrigin(origins = "*")
 public class AuthController {
     
-    @Autowired
-    private AuthService authService;
+    private final AuthService authService;
+    
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
     
     /**
      * Register a new user.
@@ -34,16 +37,8 @@ public class AuthController {
      */
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest request) {
-        try {
-            AuthResponse response = authService.register(request);
-            return ResponseEntity.ok(ApiResponse.success("User registered successfully", response));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Registration failed: " + e.getMessage()));
-        }
+        AuthResponse response = authService.register(request);
+        return ResponseUtils.created(response, "User registered successfully");
     }
     
     /**
@@ -54,16 +49,8 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
-        try {
-            AuthResponse response = authService.login(request);
-            return ResponseEntity.ok(ApiResponse.success("Login successful", response));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Login failed: " + e.getMessage()));
-        }
+        AuthResponse response = authService.login(request);
+        return ResponseUtils.success(response, "Login successful");
     }
     
     /**
@@ -73,18 +60,11 @@ public class AuthController {
      */
     @GetMapping("/profile")
     public ResponseEntity<ApiResponse<User>> getProfile() {
-        try {
-            Optional<User> currentUser = authService.getCurrentUser();
-            if (currentUser.isPresent()) {
-                return ResponseEntity.ok(ApiResponse.success("Profile retrieved successfully", currentUser.get()));
-            } else {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(ApiResponse.error("User not authenticated"));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Failed to retrieve profile: " + e.getMessage()));
+        Optional<User> currentUser = authService.getCurrentUser();
+        if (currentUser.isEmpty()) {
+            return ResponseUtils.error("User not authenticated", HttpStatus.UNAUTHORIZED);
         }
+        return ResponseUtils.success(currentUser.get(), "Profile retrieved successfully");
     }
     
     /**
@@ -95,12 +75,7 @@ public class AuthController {
      */
     @PostMapping("/validate")
     public ResponseEntity<ApiResponse<Boolean>> validateToken(@RequestParam String token) {
-        try {
-            boolean isValid = authService.validateToken(token);
-            return ResponseEntity.ok(ApiResponse.success("Token validation completed", isValid));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Token validation failed: " + e.getMessage()));
-        }
+        boolean isValid = authService.validateToken(token);
+        return ResponseUtils.success(isValid, "Token validation completed");
     }
 }

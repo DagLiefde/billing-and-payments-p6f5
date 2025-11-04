@@ -15,17 +15,17 @@ import com.fabrica.p6f5.springapp.invoice.repository.InvoiceRepository;
 import com.fabrica.p6f5.springapp.invoice.repository.InvoiceShipmentRepository;
 import com.fabrica.p6f5.springapp.shipment.model.Shipment;
 import com.fabrica.p6f5.springapp.shipment.repository.ShipmentRepository;
+import com.fabrica.p6f5.springapp.util.Constants;
+import com.fabrica.p6f5.springapp.util.InvoiceUtils;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -37,20 +37,24 @@ public class InvoiceService {
     
     private static final Logger logger = LoggerFactory.getLogger(InvoiceService.class);
     
-    @Autowired
-    private InvoiceRepository invoiceRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final InvoiceItemRepository invoiceItemRepository;
+    private final InvoiceShipmentRepository invoiceShipmentRepository;
+    private final ShipmentRepository shipmentRepository;
+    private final AuditService auditService;
     
-    @Autowired
-    private InvoiceItemRepository invoiceItemRepository;
-    
-    @Autowired
-    private InvoiceShipmentRepository invoiceShipmentRepository;
-    
-    @Autowired
-    private ShipmentRepository shipmentRepository;
-    
-    @Autowired
-    private AuditService auditService;
+    public InvoiceService(
+            InvoiceRepository invoiceRepository,
+            InvoiceItemRepository invoiceItemRepository,
+            InvoiceShipmentRepository invoiceShipmentRepository,
+            ShipmentRepository shipmentRepository,
+            AuditService auditService) {
+        this.invoiceRepository = invoiceRepository;
+        this.invoiceItemRepository = invoiceItemRepository;
+        this.invoiceShipmentRepository = invoiceShipmentRepository;
+        this.shipmentRepository = shipmentRepository;
+        this.auditService = auditService;
+    }
     
     /**
      * Create a draft invoice
@@ -59,75 +63,102 @@ public class InvoiceService {
     public InvoiceResponse createDraftInvoice(CreateInvoiceRequest request, Long createdBy) {
         logger.info("Creating draft invoice for client: {}", request.getClientName());
         
-        // Generate unique invoice number
-        String invoiceNumber = generateInvoiceNumber();
+        Invoice invoice = createInvoiceFromRequest(request, createdBy);
+        Invoice savedInvoice = invoiceRepository.save(invoice);
         
-        // Create invoice
+        addInvoiceItems(savedInvoice, request.getItems());
+        linkShipments(savedInvoice, request.getShipmentIds());
+        
+        logAuditEvent(savedInvoice, createdBy, AuditLog.AuditAction.CREATE, Constants.AUDIT_CREATE_DRAFT);
+        logger.info("Draft invoice created with id: {}", savedInvoice.getId());
+        
+        return getInvoiceResponse(savedInvoice.getId());
+    }
+    
+    /**
+     * Create invoice entity from request.
+     */
+    private Invoice createInvoiceFromRequest(CreateInvoiceRequest request, Long createdBy) {
         Invoice invoice = new Invoice();
-        invoice.setInvoiceNumber(invoiceNumber);
+        invoice.setInvoiceNumber(InvoiceUtils.generateInvoiceNumber());
         invoice.setClientName(request.getClientName());
         invoice.setInvoiceDate(request.getInvoiceDate());
         invoice.setDueDate(request.getDueDate());
         invoice.setStatus(Invoice.InvoiceStatus.DRAFT);
-        invoice.setCurrency(request.getCurrency());
+        invoice.setCurrency(request.getCurrency() != null ? request.getCurrency() : Constants.DEFAULT_CURRENCY);
         invoice.setCreatedBy(createdBy);
         
-        // Calculate amounts
-        BigDecimal subtotal = calculateSubtotal(request.getItems());
+        BigDecimal subtotal = InvoiceUtils.calculateSubtotal(request.getItems());
+        BigDecimal taxAmount = request.getTaxAmount() != null ? request.getTaxAmount() : BigDecimal.ZERO;
         invoice.setSubtotal(subtotal);
-        invoice.setTaxAmount(request.getTaxAmount());
-        invoice.setTotalAmount(subtotal.add(request.getTaxAmount()));
+        invoice.setTaxAmount(taxAmount);
+        invoice.setTotalAmount(subtotal.add(taxAmount));
         
-        // Save invoice
-        Invoice savedInvoice = invoiceRepository.save(invoice);
+        return invoice;
+    }
+    
+    /**
+     * Add invoice items and link to shipments if provided.
+     */
+    private void addInvoiceItems(Invoice invoice, List<CreateInvoiceRequest.InvoiceItemRequest> itemRequests) {
+        List<InvoiceItem> items = InvoiceUtils.createInvoiceItems(itemRequests, invoice);
         
-        // Add items
-        List<InvoiceItem> items = new ArrayList<>();
-        for (CreateInvoiceRequest.InvoiceItemRequest itemRequest : request.getItems()) {
-            InvoiceItem item = new InvoiceItem();
-            item.setInvoice(savedInvoice);
-            item.setDescription(itemRequest.getDescription());
-            item.setQuantity(itemRequest.getQuantity());
-            item.setUnitPrice(itemRequest.getUnitPrice());
-            item.calculateTotal();
-            items.add(item);
-            
-            // Link to shipment if provided
-            if (itemRequest.getShipmentId() != null) {
-                Shipment shipment = shipmentRepository.findById(itemRequest.getShipmentId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Shipment not found with id: " + itemRequest.getShipmentId()));
-                item.setShipment(shipment);
-            }
+        for (int i = 0; i < items.size(); i++) {
+            InvoiceItem item = items.get(i);
+            CreateInvoiceRequest.InvoiceItemRequest itemRequest = itemRequests.get(i);
+            linkItemToShipment(item, itemRequest.getShipmentId());
         }
+        
         invoiceItemRepository.saveAll(items);
-        
-        // Link shipments
-        if (request.getShipmentIds() != null && !request.getShipmentIds().isEmpty()) {
-            List<InvoiceShipment> invoiceShipments = new ArrayList<>();
-            for (Long shipmentId : request.getShipmentIds()) {
-                Shipment shipment = shipmentRepository.findById(shipmentId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Shipment not found with id: " + shipmentId));
-                
-                // Check if shipment is already linked to an invoice
-                if (invoiceShipmentRepository.existsByShipmentId(shipmentId)) {
-                    throw new BusinessException("Shipment " + shipmentId + " is already linked to an invoice");
-                }
-                
-                InvoiceShipment invoiceShipment = new InvoiceShipment();
-                invoiceShipment.setInvoice(savedInvoice);
-                invoiceShipment.setShipment(shipment);
-                invoiceShipments.add(invoiceShipment);
-            }
-            invoiceShipmentRepository.saveAll(invoiceShipments);
+    }
+    
+    /**
+     * Link item to shipment if shipment ID is provided.
+     */
+    private void linkItemToShipment(InvoiceItem item, Long shipmentId) {
+        if (shipmentId == null) {
+            return;
         }
         
-        // Log audit event
-        auditService.logEvent("Invoice", savedInvoice.getId(), AuditLog.AuditAction.CREATE,
-            createdBy, null, savedInvoice, "Created draft invoice");
+        Shipment shipment = findShipmentById(shipmentId);
+        item.setShipment(shipment);
+    }
+    
+    /**
+     * Link shipments to invoice.
+     */
+    private void linkShipments(Invoice invoice, List<Long> shipmentIds) {
+        if (shipmentIds == null || shipmentIds.isEmpty()) {
+            return;
+        }
         
-        logger.info("Draft invoice created with id: {}", savedInvoice.getId());
-        
-        return InvoiceResponse.fromEntity(invoiceRepository.findById(savedInvoice.getId()).get());
+        List<InvoiceShipment> invoiceShipments = new ArrayList<>();
+        for (Long shipmentId : shipmentIds) {
+            validateShipmentNotLinked(shipmentId);
+            InvoiceShipment invoiceShipment = createInvoiceShipment(invoice, shipmentId);
+            invoiceShipments.add(invoiceShipment);
+        }
+        invoiceShipmentRepository.saveAll(invoiceShipments);
+    }
+    
+    /**
+     * Validate that shipment is not already linked.
+     */
+    private void validateShipmentNotLinked(Long shipmentId) {
+        if (invoiceShipmentRepository.existsByShipmentId(shipmentId)) {
+            throw new BusinessException(String.format(Constants.SHIPMENT_ALREADY_LINKED, shipmentId));
+        }
+    }
+    
+    /**
+     * Create invoice-shipment relationship.
+     */
+    private InvoiceShipment createInvoiceShipment(Invoice invoice, Long shipmentId) {
+        Shipment shipment = findShipmentById(shipmentId);
+        InvoiceShipment invoiceShipment = new InvoiceShipment();
+        invoiceShipment.setInvoice(invoice);
+        invoiceShipment.setShipment(shipment);
+        return invoiceShipment;
     }
     
     /**
@@ -137,95 +168,125 @@ public class InvoiceService {
     public InvoiceResponse updateDraftInvoice(Long invoiceId, UpdateInvoiceRequest request, Long updatedBy) {
         logger.info("Updating draft invoice id: {}", invoiceId);
         
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found with id: " + invoiceId));
+        Invoice invoice = findInvoiceById(invoiceId);
+        validateInvoiceCanBeEdited(invoice);
+        validateVersion(invoice, request.getVersion());
         
-        // Check if invoice can be edited
+        saveInvoiceHistory(invoice);
+        Invoice oldInvoice = InvoiceUtils.copyInvoice(invoice);
+        
+        updateInvoiceFields(invoice, request);
+        updateInvoiceItems(invoice, invoiceId, request.getItems());
+        updateInvoiceShipments(invoice, invoiceId, request.getShipmentIds());
+        
+        Invoice updatedInvoice = invoiceRepository.save(invoice);
+        logAuditEvent(updatedInvoice, updatedBy, AuditLog.AuditAction.UPDATE, Constants.AUDIT_UPDATE_DRAFT, oldInvoice);
+        
+        logger.info("Draft invoice updated with id: {}", updatedInvoice.getId());
+        return getInvoiceResponse(updatedInvoice.getId());
+    }
+    
+    /**
+     * Find invoice by ID or throw exception.
+     */
+    private Invoice findInvoiceById(Long invoiceId) {
+        return invoiceRepository.findById(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException(Constants.INVOICE_NOT_FOUND + invoiceId));
+    }
+    
+    /**
+     * Validate that invoice can be edited.
+     */
+    private void validateInvoiceCanBeEdited(Invoice invoice) {
         if (!invoice.canBeEdited()) {
-            throw new BusinessException("Invoice cannot be edited. Status: " + invoice.getStatus());
+            throw new BusinessException(String.format(Constants.INVOICE_CANNOT_BE_EDITED, invoice.getStatus()));
         }
-        
-        // Optimistic concurrency control
-        if (request.getVersion() != null && !request.getVersion().equals(invoice.getVersion())) {
-            throw new BusinessException("Invoice has been modified by another user. Please refresh and try again.");
+    }
+    
+    /**
+     * Validate version for optimistic concurrency control.
+     */
+    private void validateVersion(Invoice invoice, Integer requestVersion) {
+        if (requestVersion != null && !requestVersion.equals(invoice.getVersion())) {
+            throw new BusinessException(Constants.INVOICE_MODIFIED);
         }
-        
-        // Save history before updating
-        auditService.saveInvoiceHistory(invoice.getId(), invoice.getVersion(),
-            invoice.getFiscalFolio(), invoice.getInvoiceNumber(), invoice, invoice.getCreatedBy());
-        
-        // Save old data for audit
-        Invoice oldInvoice = copyInvoice(invoice);
-        
-        // Update invoice fields
+    }
+    
+    /**
+     * Save invoice history before update.
+     */
+    private void saveInvoiceHistory(Invoice invoice) {
+        auditService.saveInvoiceHistory(
+            invoice.getId(),
+            invoice.getVersion(),
+            invoice.getFiscalFolio(),
+            invoice.getInvoiceNumber(),
+            invoice,
+            invoice.getCreatedBy()
+        );
+    }
+    
+    /**
+     * Update invoice fields from request.
+     */
+    private void updateInvoiceFields(Invoice invoice, UpdateInvoiceRequest request) {
         invoice.setClientName(request.getClientName());
         invoice.setInvoiceDate(request.getInvoiceDate());
         invoice.setDueDate(request.getDueDate());
-        invoice.setCurrency(request.getCurrency());
-        invoice.setTaxAmount(request.getTaxAmount());
+        invoice.setCurrency(request.getCurrency() != null ? request.getCurrency() : Constants.DEFAULT_CURRENCY);
+        invoice.setTaxAmount(request.getTaxAmount() != null ? request.getTaxAmount() : BigDecimal.ZERO);
         
-        // Calculate amounts
-        BigDecimal subtotal = calculateSubtotal(request.getItems());
+        BigDecimal subtotal = InvoiceUtils.calculateSubtotal(request.getItems());
         invoice.setSubtotal(subtotal);
-        invoice.setTotalAmount(subtotal.add(request.getTaxAmount()));
-        
-        // Delete old items
+        invoice.setTotalAmount(subtotal.add(invoice.getTaxAmount()));
+    }
+    
+    /**
+     * Update invoice items.
+     */
+    private void updateInvoiceItems(Invoice invoice, Long invoiceId, List<UpdateInvoiceRequest.InvoiceItemRequest> itemRequests) {
         invoiceItemRepository.deleteByInvoiceId(invoiceId);
-        invoiceShipmentRepository.deleteByInvoiceId(invoiceId);
         
-        // Add new items
-        List<InvoiceItem> items = new ArrayList<>();
-        for (UpdateInvoiceRequest.InvoiceItemRequest itemRequest : request.getItems()) {
-            InvoiceItem item = new InvoiceItem();
-            item.setInvoice(invoice);
-            item.setDescription(itemRequest.getDescription());
-            item.setQuantity(itemRequest.getQuantity());
-            item.setUnitPrice(itemRequest.getUnitPrice());
-            item.calculateTotal();
-            items.add(item);
-            
-            // Link to shipment if provided
-            if (itemRequest.getShipmentId() != null) {
-                Shipment shipment = shipmentRepository.findById(itemRequest.getShipmentId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Shipment not found with id: " + itemRequest.getShipmentId()));
-                item.setShipment(shipment);
-            }
+        List<InvoiceItem> items = InvoiceUtils.createInvoiceItemsFromUpdate(itemRequests, invoice);
+        for (int i = 0; i < items.size(); i++) {
+            InvoiceItem item = items.get(i);
+            UpdateInvoiceRequest.InvoiceItemRequest itemRequest = itemRequests.get(i);
+            linkItemToShipment(item, itemRequest.getShipmentId());
         }
         invoiceItemRepository.saveAll(items);
+    }
+    
+    /**
+     * Update invoice shipments.
+     */
+    private void updateInvoiceShipments(Invoice invoice, Long invoiceId, List<Long> shipmentIds) {
+        invoiceShipmentRepository.deleteByInvoiceId(invoiceId);
         
-        // Link shipments
-        if (request.getShipmentIds() != null && !request.getShipmentIds().isEmpty()) {
-            List<InvoiceShipment> invoiceShipments = new ArrayList<>();
-            for (Long shipmentId : request.getShipmentIds()) {
-                Shipment shipment = shipmentRepository.findById(shipmentId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Shipment not found with id: " + shipmentId));
-                
-                // Check if shipment is already linked to another invoice
-                if (invoiceShipmentRepository.existsByShipmentId(shipmentId)) {
-                    Optional<InvoiceShipment> existing = invoiceShipmentRepository.findByInvoiceIdAndShipmentId(invoiceId, shipmentId);
-                    if (!existing.isPresent()) {
-                        throw new BusinessException("Shipment " + shipmentId + " is already linked to another invoice");
-                    }
-                }
-                
-                InvoiceShipment invoiceShipment = new InvoiceShipment();
-                invoiceShipment.setInvoice(invoice);
-                invoiceShipment.setShipment(shipment);
-                invoiceShipments.add(invoiceShipment);
-            }
-            invoiceShipmentRepository.saveAll(invoiceShipments);
+        if (shipmentIds == null || shipmentIds.isEmpty()) {
+            return;
         }
         
-        // Save updated invoice
-        Invoice updatedInvoice = invoiceRepository.save(invoice);
+        List<InvoiceShipment> invoiceShipments = new ArrayList<>();
+        for (Long shipmentId : shipmentIds) {
+            validateShipmentForUpdate(invoiceId, shipmentId);
+            InvoiceShipment invoiceShipment = createInvoiceShipment(invoice, shipmentId);
+            invoiceShipments.add(invoiceShipment);
+        }
+        invoiceShipmentRepository.saveAll(invoiceShipments);
+    }
+    
+    /**
+     * Validate shipment for update (can be linked to same invoice but not another).
+     */
+    private void validateShipmentForUpdate(Long invoiceId, Long shipmentId) {
+        if (!invoiceShipmentRepository.existsByShipmentId(shipmentId)) {
+            return;
+        }
         
-        // Log audit event
-        auditService.logEvent("Invoice", updatedInvoice.getId(), AuditLog.AuditAction.UPDATE,
-            updatedBy, oldInvoice, updatedInvoice, "Updated draft invoice");
-        
-        logger.info("Draft invoice updated with id: {}", updatedInvoice.getId());
-        
-        return InvoiceResponse.fromEntity(invoiceRepository.findById(updatedInvoice.getId()).get());
+        Optional<InvoiceShipment> existing = invoiceShipmentRepository.findByInvoiceIdAndShipmentId(invoiceId, shipmentId);
+        if (existing.isEmpty()) {
+            throw new BusinessException(String.format(Constants.SHIPMENT_LINKED_TO_ANOTHER, shipmentId));
+        }
     }
     
     /**
@@ -235,45 +296,57 @@ public class InvoiceService {
     public InvoiceResponse issueInvoice(Long invoiceId, Long issuedBy) {
         logger.info("Issuing invoice id: {}", invoiceId);
         
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found with id: " + invoiceId));
+        Invoice invoice = findInvoiceById(invoiceId);
+        validateInvoiceCanBeIssued(invoice);
         
-        // Check if invoice can be issued
-        if (!invoice.canBeIssued()) {
-            throw new BusinessException("Invoice cannot be issued. Missing required data or invalid status.");
-        }
-        
-        // Generate fiscal folio if not exists
-        if (invoice.getFiscalFolio() == null) {
-            String fiscalFolio = generateFiscalFolio();
-            invoice.setFiscalFolio(fiscalFolio);
-        }
-        
-        // Change status to ISSUED
+        ensureFiscalFolioExists(invoice);
         invoice.setStatus(Invoice.InvoiceStatus.ISSUED);
         
-        // Save invoice
         Invoice issuedInvoice = invoiceRepository.save(invoice);
-        
-        // Log audit event
-        auditService.logEvent("Invoice", issuedInvoice.getId(), AuditLog.AuditAction.ISSUE,
-            issuedBy, invoice, issuedInvoice, "Issued invoice");
-        
-        // Save history
-        auditService.saveInvoiceHistory(issuedInvoice.getId(), issuedInvoice.getVersion(),
-            issuedInvoice.getFiscalFolio(), issuedInvoice.getInvoiceNumber(), issuedInvoice, issuedBy);
+        saveInvoiceHistoryOnIssue(issuedInvoice, issuedBy);
+        logAuditEvent(issuedInvoice, issuedBy, AuditLog.AuditAction.ISSUE, Constants.AUDIT_ISSUE, invoice);
         
         logger.info("Invoice issued with fiscal folio: {}", issuedInvoice.getFiscalFolio());
-        
-        return InvoiceResponse.fromEntity(invoiceRepository.findById(issuedInvoice.getId()).get());
+        return getInvoiceResponse(issuedInvoice.getId());
+    }
+    
+    /**
+     * Validate that invoice can be issued.
+     */
+    private void validateInvoiceCanBeIssued(Invoice invoice) {
+        if (!invoice.canBeIssued()) {
+            throw new BusinessException(Constants.INVOICE_CANNOT_BE_ISSUED);
+        }
+    }
+    
+    /**
+     * Ensure fiscal folio exists, generate if not.
+     */
+    private void ensureFiscalFolioExists(Invoice invoice) {
+        if (invoice.getFiscalFolio() == null) {
+            invoice.setFiscalFolio(InvoiceUtils.generateFiscalFolio());
+        }
+    }
+    
+    /**
+     * Save invoice history on issue.
+     */
+    private void saveInvoiceHistoryOnIssue(Invoice invoice, Long issuedBy) {
+        auditService.saveInvoiceHistory(
+            invoice.getId(),
+            invoice.getVersion(),
+            invoice.getFiscalFolio(),
+            invoice.getInvoiceNumber(),
+            invoice,
+            issuedBy
+        );
     }
     
     /**
      * Get invoice by ID
      */
     public InvoiceResponse getInvoiceById(Long invoiceId) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-            .orElseThrow(() -> new ResourceNotFoundException("Invoice not found with id: " + invoiceId));
+        Invoice invoice = findInvoiceById(invoiceId);
         return InvoiceResponse.fromEntity(invoice);
     }
     
@@ -296,65 +369,34 @@ public class InvoiceService {
     }
     
     /**
-     * Calculate subtotal from items
+     * Find shipment by ID or throw exception.
      */
-    private BigDecimal calculateSubtotal(List<?> items) {
-        if (items == null || items.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        return items.stream()
-            .map(item -> {
-                BigDecimal unitPrice;
-                Integer quantity;
-                if (item instanceof CreateInvoiceRequest.InvoiceItemRequest req) {
-                    unitPrice = req.getUnitPrice();
-                    quantity = req.getQuantity();
-                } else if (item instanceof UpdateInvoiceRequest.InvoiceItemRequest req) {
-                    unitPrice = req.getUnitPrice();
-                    quantity = req.getQuantity();
-                } else {
-                    return BigDecimal.ZERO;
-                }
-                return unitPrice.multiply(BigDecimal.valueOf(quantity));
-            })
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    private Shipment findShipmentById(Long shipmentId) {
+        return shipmentRepository.findById(shipmentId)
+            .orElseThrow(() -> new ResourceNotFoundException(Constants.SHIPMENT_NOT_FOUND + shipmentId));
     }
     
     /**
-     * Generate unique invoice number
+     * Get invoice response with fresh data from database.
      */
-    private String generateInvoiceNumber() {
-        return "INV-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase() + "-" + System.currentTimeMillis();
+    private InvoiceResponse getInvoiceResponse(Long invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+            .orElseThrow(() -> new ResourceNotFoundException(Constants.INVOICE_NOT_FOUND + invoiceId));
+        return InvoiceResponse.fromEntity(invoice);
     }
     
     /**
-     * Generate unique fiscal folio
+     * Log audit event.
      */
-    private String generateFiscalFolio() {
-        return "FISCAL-" + UUID.randomUUID().toString().substring(0, 16).toUpperCase() + "-" + System.currentTimeMillis();
+    private void logAuditEvent(Invoice invoice, Long userId, AuditLog.AuditAction action, String summary) {
+        logAuditEvent(invoice, userId, action, summary, null);
     }
     
     /**
-     * Copy invoice for history
+     * Log audit event with old data.
      */
-    private Invoice copyInvoice(Invoice invoice) {
-        Invoice copy = new Invoice();
-        copy.setId(invoice.getId());
-        copy.setFiscalFolio(invoice.getFiscalFolio());
-        copy.setInvoiceNumber(invoice.getInvoiceNumber());
-        copy.setClientName(invoice.getClientName());
-        copy.setInvoiceDate(invoice.getInvoiceDate());
-        copy.setDueDate(invoice.getDueDate());
-        copy.setSubtotal(invoice.getSubtotal());
-        copy.setTaxAmount(invoice.getTaxAmount());
-        copy.setTotalAmount(invoice.getTotalAmount());
-        copy.setCurrency(invoice.getCurrency());
-        copy.setStatus(invoice.getStatus());
-        copy.setCreatedBy(invoice.getCreatedBy());
-        copy.setCreatedAt(invoice.getCreatedAt());
-        copy.setUpdatedAt(invoice.getUpdatedAt());
-        copy.setVersion(invoice.getVersion());
-        return copy;
+    private void logAuditEvent(Invoice invoice, Long userId, AuditLog.AuditAction action, String summary, Invoice oldInvoice) {
+        auditService.logEvent(Constants.ENTITY_TYPE_INVOICE, invoice.getId(), action, userId, oldInvoice, invoice, summary);
     }
 }
 

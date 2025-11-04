@@ -7,7 +7,6 @@ import com.fabrica.p6f5.springapp.audit.repository.InvoiceHistoryRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,14 +22,17 @@ public class AuditService {
     
     private static final Logger logger = LoggerFactory.getLogger(AuditService.class);
     
-    @Autowired
-    private AuditLogRepository auditLogRepository;
+    private final AuditLogRepository auditLogRepository;
+    private final InvoiceHistoryRepository invoiceHistoryRepository;
+    private final ObjectMapper objectMapper;
     
-    @Autowired
-    private InvoiceHistoryRepository invoiceHistoryRepository;
-    
-    @Autowired
-    private ObjectMapper objectMapper;
+    public AuditService(AuditLogRepository auditLogRepository, 
+                        InvoiceHistoryRepository invoiceHistoryRepository,
+                        ObjectMapper objectMapper) {
+        this.auditLogRepository = auditLogRepository;
+        this.invoiceHistoryRepository = invoiceHistoryRepository;
+        this.objectMapper = objectMapper;
+    }
     
     /**
      * Log an audit event

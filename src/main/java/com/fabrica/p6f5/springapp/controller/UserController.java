@@ -3,7 +3,6 @@ package com.fabrica.p6f5.springapp.controller;
 import com.fabrica.p6f5.springapp.dto.ApiResponse;
 import com.fabrica.p6f5.springapp.entity.User;
 import com.fabrica.p6f5.springapp.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -20,8 +19,11 @@ import java.util.Optional;
 @CrossOrigin(origins = "*")
 public class UserController {
     
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+    
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
     
     /**
      * Get all users (Admin only).
