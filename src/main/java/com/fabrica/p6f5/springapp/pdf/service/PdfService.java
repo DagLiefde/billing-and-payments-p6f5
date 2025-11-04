@@ -40,44 +40,73 @@ public class PdfService {
         validateInvoiceStatusForPdf(invoice);
         
         try {
-            // Create PDF log entry
-            PdfLog pdfLog = new PdfLog();
-            pdfLog.setInvoiceId(invoiceId);
-            pdfLog.setStatus(PdfLog.GenerationStatus.PENDING);
-            pdfLog.setGeneratedBy(generatedBy);
-            pdfLog = pdfLogRepository.save(pdfLog);
-            
-            // TODO: Implement actual PDF generation using iText7
-            // For now, we'll generate a mock URL
-            String pdfUrl = generateMockPdfUrl(invoice);
-            
-            // Update PDF log with success
-            pdfLog.setStatus(PdfLog.GenerationStatus.SUCCESS);
-            pdfLog.setPdfUrl(pdfUrl);
-            pdfLog.setTemplateType("STANDARD");
-            pdfLogRepository.save(pdfLog);
-            
-            // Update invoice with PDF URL
-            invoice.setPdfUrl(pdfUrl);
-            invoiceRepository.save(invoice);
-            
-            logger.info("PDF generated successfully for invoice id: {}", invoiceId);
-            
-            return pdfUrl;
-            
+            return generatePdfAndSave(invoice, invoiceId, generatedBy);
         } catch (Exception e) {
-            logger.error("Error generating PDF for invoice id: {}", invoiceId, e);
-            
-            // Log failure
-            PdfLog pdfLog = new PdfLog();
-            pdfLog.setInvoiceId(invoiceId);
-            pdfLog.setStatus(PdfLog.GenerationStatus.FAILED);
-            pdfLog.setErrorMessage(e.getMessage());
-            pdfLog.setGeneratedBy(generatedBy);
-            pdfLogRepository.save(pdfLog);
-            
+            handlePdfGenerationError(invoiceId, generatedBy, e);
             throw new BusinessException(String.format(Constants.PDF_GENERATION_FAILED, e.getMessage()));
         }
+    }
+    
+    /**
+     * Generate PDF and save log entry.
+     */
+    private String generatePdfAndSave(Invoice invoice, Long invoiceId, Long generatedBy) {
+        PdfLog pdfLog = createPendingPdfLog(invoiceId, generatedBy);
+        String pdfUrl = generateMockPdfUrl(invoice);
+        updatePdfLogSuccess(pdfLog, pdfUrl);
+        updateInvoiceWithPdfUrl(invoice, pdfUrl);
+        logger.info("PDF generated successfully for invoice id: {}", invoiceId);
+        return pdfUrl;
+    }
+    
+    /**
+     * Create pending PDF log entry.
+     */
+    private PdfLog createPendingPdfLog(Long invoiceId, Long generatedBy) {
+        PdfLog pdfLog = new PdfLog();
+        pdfLog.setInvoiceId(invoiceId);
+        pdfLog.setStatus(PdfLog.GenerationStatus.PENDING);
+        pdfLog.setGeneratedBy(generatedBy);
+        return pdfLogRepository.save(pdfLog);
+    }
+    
+    /**
+     * Update PDF log with success status.
+     */
+    private void updatePdfLogSuccess(PdfLog pdfLog, String pdfUrl) {
+        pdfLog.setStatus(PdfLog.GenerationStatus.SUCCESS);
+        pdfLog.setPdfUrl(pdfUrl);
+        pdfLog.setTemplateType("STANDARD");
+        pdfLogRepository.save(pdfLog);
+    }
+    
+    /**
+     * Update invoice with PDF URL.
+     */
+    private void updateInvoiceWithPdfUrl(Invoice invoice, String pdfUrl) {
+        invoice.setPdfUrl(pdfUrl);
+        invoiceRepository.save(invoice);
+    }
+    
+    /**
+     * Handle PDF generation error.
+     */
+    private void handlePdfGenerationError(Long invoiceId, Long generatedBy, Exception e) {
+        logger.error("Error generating PDF for invoice id: {}", invoiceId, e);
+        PdfLog pdfLog = createFailedPdfLog(invoiceId, generatedBy, e);
+        pdfLogRepository.save(pdfLog);
+    }
+    
+    /**
+     * Create failed PDF log entry.
+     */
+    private PdfLog createFailedPdfLog(Long invoiceId, Long generatedBy, Exception e) {
+        PdfLog pdfLog = new PdfLog();
+        pdfLog.setInvoiceId(invoiceId);
+        pdfLog.setStatus(PdfLog.GenerationStatus.FAILED);
+        pdfLog.setErrorMessage(e.getMessage());
+        pdfLog.setGeneratedBy(generatedBy);
+        return pdfLog;
     }
     
     /**

@@ -62,7 +62,7 @@ public class AuthController {
     public ResponseEntity<ApiResponse<User>> getProfile() {
         Optional<User> currentUser = authService.getCurrentUser();
         if (currentUser.isEmpty()) {
-            return ResponseUtils.error("User not authenticated", HttpStatus.UNAUTHORIZED);
+            return ResponseUtils.errorTyped("User not authenticated", HttpStatus.UNAUTHORIZED);
         }
         return ResponseUtils.success(currentUser.get(), "Profile retrieved successfully");
     }

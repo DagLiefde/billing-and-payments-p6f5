@@ -1,7 +1,6 @@
 package com.fabrica.p6f5.springapp.shipment.service;
 
 import com.fabrica.p6f5.springapp.shipment.repository.ShipmentRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -11,8 +10,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class ShipmentService {
     
-    @Autowired
-    private ShipmentRepository shipmentRepository;
+    private final ShipmentRepository shipmentRepository;
+    
+    public ShipmentService(ShipmentRepository shipmentRepository) {
+        this.shipmentRepository = shipmentRepository;
+    }
     
     // Business logic methods can be added here as needed
 }

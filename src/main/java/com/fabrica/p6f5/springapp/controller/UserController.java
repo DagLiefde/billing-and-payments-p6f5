@@ -2,13 +2,14 @@ package com.fabrica.p6f5.springapp.controller;
 
 import com.fabrica.p6f5.springapp.dto.ApiResponse;
 import com.fabrica.p6f5.springapp.entity.User;
+import com.fabrica.p6f5.springapp.exception.ResourceNotFoundException;
 import com.fabrica.p6f5.springapp.service.UserService;
+import com.fabrica.p6f5.springapp.util.ResponseUtils;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * User Controller following Open/Closed Principle.
@@ -33,13 +34,8 @@ public class UserController {
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<User>>> getAllUsers() {
-        try {
-            List<User> users = userService.findAll();
-            return ResponseEntity.ok(ApiResponse.success("Users retrieved successfully", users));
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(ApiResponse.error("Failed to retrieve users: " + e.getMessage()));
-        }
+        List<User> users = userService.findAll();
+        return ResponseUtils.success(users, "Users retrieved successfully");
     }
     
     /**
@@ -50,17 +46,9 @@ public class UserController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<User>> getUserById(@PathVariable Long id) {
-        try {
-            Optional<User> user = userService.findById(id);
-            if (user.isPresent()) {
-                return ResponseEntity.ok(ApiResponse.success("User retrieved successfully", user.get()));
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(ApiResponse.error("Failed to retrieve user: " + e.getMessage()));
-        }
+        User user = userService.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        return ResponseUtils.success(user, "User retrieved successfully");
     }
     
     /**
@@ -73,18 +61,10 @@ public class UserController {
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @userService.findById(#id).get().username == authentication.name")
     public ResponseEntity<ApiResponse<User>> updateUser(@PathVariable Long id, @RequestBody User user) {
-        try {
-            Optional<User> existingUser = userService.findById(id);
-            if (existingUser.isPresent()) {
-                User updatedUser = userService.save(user);
-                return ResponseEntity.ok(ApiResponse.success("User updated successfully", updatedUser));
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(ApiResponse.error("Failed to update user: " + e.getMessage()));
-        }
+        userService.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        User updatedUser = userService.save(user);
+        return ResponseUtils.success(updatedUser, "User updated successfully");
     }
     
     /**
@@ -96,17 +76,9 @@ public class UserController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> deleteUser(@PathVariable Long id) {
-        try {
-            Optional<User> user = userService.findById(id);
-            if (user.isPresent()) {
-                userService.deleteById(id);
-                return ResponseEntity.ok(ApiResponse.success("User deleted successfully", null));
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(500)
-                    .body(ApiResponse.error("Failed to delete user: " + e.getMessage()));
-        }
+        userService.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+        userService.deleteById(id);
+        return ResponseUtils.success("User deleted successfully", "User deleted successfully");
     }
 }

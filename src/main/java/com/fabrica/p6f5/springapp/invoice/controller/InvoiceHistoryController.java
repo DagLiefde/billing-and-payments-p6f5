@@ -54,7 +54,7 @@ public class InvoiceHistoryController {
             @Parameter(description = "Version number") @PathVariable Integer version) {
         Optional<InvoiceHistory> history = auditService.getInvoiceHistoryVersion(invoiceId, version);
         if (history.isEmpty()) {
-            return ResponseUtils.error("Version not found", org.springframework.http.HttpStatus.NOT_FOUND);
+            return ResponseUtils.errorTyped("Version not found", org.springframework.http.HttpStatus.NOT_FOUND);
         }
         InvoiceHistoryResponse response = convertToResponse(history.get());
         return ResponseUtils.success(response, "Invoice version retrieved successfully");

@@ -8,9 +8,7 @@ import com.fabrica.p6f5.springapp.invoice.dto.CreateInvoiceRequest;
 import com.fabrica.p6f5.springapp.invoice.dto.InvoiceResponse;
 import com.fabrica.p6f5.springapp.invoice.dto.UpdateInvoiceRequest;
 import com.fabrica.p6f5.springapp.invoice.model.Invoice;
-import com.fabrica.p6f5.springapp.invoice.model.InvoiceItem;
 import com.fabrica.p6f5.springapp.invoice.model.InvoiceShipment;
-import com.fabrica.p6f5.springapp.invoice.repository.InvoiceItemRepository;
 import com.fabrica.p6f5.springapp.invoice.repository.InvoiceRepository;
 import com.fabrica.p6f5.springapp.invoice.repository.InvoiceShipmentRepository;
 import com.fabrica.p6f5.springapp.shipment.model.Shipment;
@@ -38,22 +36,22 @@ public class InvoiceService {
     private static final Logger logger = LoggerFactory.getLogger(InvoiceService.class);
     
     private final InvoiceRepository invoiceRepository;
-    private final InvoiceItemRepository invoiceItemRepository;
     private final InvoiceShipmentRepository invoiceShipmentRepository;
     private final ShipmentRepository shipmentRepository;
     private final AuditService auditService;
+    private final InvoiceItemService invoiceItemService;
     
     public InvoiceService(
             InvoiceRepository invoiceRepository,
-            InvoiceItemRepository invoiceItemRepository,
             InvoiceShipmentRepository invoiceShipmentRepository,
             ShipmentRepository shipmentRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            InvoiceItemService invoiceItemService) {
         this.invoiceRepository = invoiceRepository;
-        this.invoiceItemRepository = invoiceItemRepository;
         this.invoiceShipmentRepository = invoiceShipmentRepository;
         this.shipmentRepository = shipmentRepository;
         this.auditService = auditService;
+        this.invoiceItemService = invoiceItemService;
     }
     
     /**
@@ -66,7 +64,7 @@ public class InvoiceService {
         Invoice invoice = createInvoiceFromRequest(request, createdBy);
         Invoice savedInvoice = invoiceRepository.save(invoice);
         
-        addInvoiceItems(savedInvoice, request.getItems());
+        invoiceItemService.addInvoiceItems(savedInvoice, request.getItems());
         linkShipments(savedInvoice, request.getShipmentIds());
         
         logAuditEvent(savedInvoice, createdBy, AuditLog.AuditAction.CREATE, Constants.AUDIT_CREATE_DRAFT);
@@ -97,32 +95,6 @@ public class InvoiceService {
         return invoice;
     }
     
-    /**
-     * Add invoice items and link to shipments if provided.
-     */
-    private void addInvoiceItems(Invoice invoice, List<CreateInvoiceRequest.InvoiceItemRequest> itemRequests) {
-        List<InvoiceItem> items = InvoiceUtils.createInvoiceItems(itemRequests, invoice);
-        
-        for (int i = 0; i < items.size(); i++) {
-            InvoiceItem item = items.get(i);
-            CreateInvoiceRequest.InvoiceItemRequest itemRequest = itemRequests.get(i);
-            linkItemToShipment(item, itemRequest.getShipmentId());
-        }
-        
-        invoiceItemRepository.saveAll(items);
-    }
-    
-    /**
-     * Link item to shipment if shipment ID is provided.
-     */
-    private void linkItemToShipment(InvoiceItem item, Long shipmentId) {
-        if (shipmentId == null) {
-            return;
-        }
-        
-        Shipment shipment = findShipmentById(shipmentId);
-        item.setShipment(shipment);
-    }
     
     /**
      * Link shipments to invoice.
@@ -176,7 +148,7 @@ public class InvoiceService {
         Invoice oldInvoice = InvoiceUtils.copyInvoice(invoice);
         
         updateInvoiceFields(invoice, request);
-        updateInvoiceItems(invoice, invoiceId, request.getItems());
+        invoiceItemService.updateInvoiceItems(invoice, invoiceId, request.getItems());
         updateInvoiceShipments(invoice, invoiceId, request.getShipmentIds());
         
         Invoice updatedInvoice = invoiceRepository.save(invoice);
@@ -241,20 +213,6 @@ public class InvoiceService {
         invoice.setTotalAmount(subtotal.add(invoice.getTaxAmount()));
     }
     
-    /**
-     * Update invoice items.
-     */
-    private void updateInvoiceItems(Invoice invoice, Long invoiceId, List<UpdateInvoiceRequest.InvoiceItemRequest> itemRequests) {
-        invoiceItemRepository.deleteByInvoiceId(invoiceId);
-        
-        List<InvoiceItem> items = InvoiceUtils.createInvoiceItemsFromUpdate(itemRequests, invoice);
-        for (int i = 0; i < items.size(); i++) {
-            InvoiceItem item = items.get(i);
-            UpdateInvoiceRequest.InvoiceItemRequest itemRequest = itemRequests.get(i);
-            linkItemToShipment(item, itemRequest.getShipmentId());
-        }
-        invoiceItemRepository.saveAll(items);
-    }
     
     /**
      * Update invoice shipments.
